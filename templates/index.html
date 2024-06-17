@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API con Google Maps</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet"> <!-- Font Awesome -->
+    <style>
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        #inputs, #results {
+            margin: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Añade sombra a los cards */
+        }
+        .full-height {
+            height: 100vh;
+        }
+        .mode-button {
+            flex: 1;
+            margin: 5px;
+        }
+        .card-header {
+            background-color: #343a40; /* Fondo negro */
+            color: white; /* Texto blanco */
+        }
+        .result-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .result-header i {
+            margin-right: 10px;
+        }
+        .result-header b {
+            flex: 1;
+        }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAgIwoNsnI4JVgb-jGacBcRLiOd9JMLtRs&libraries=places"></script>
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+</head>
+<body>
+    <center><h3>API optimización de rutas con Google Maps</h3></center>
+    <div class="container-fluid full-height">
+        <div class="row full-height">
+            <div class="col-md-4">
+                <div id="inputs" class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Destino-Origen</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="origin">Punto origen</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-map-marker-alt"></i></span>
+                                </div>
+                                <input id="origin" type="text" class="form-control" placeholder="Origen">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="destination">Punto final</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-map-marker-alt"></i></span>
+                                </div>
+                                <input id="destination" type="text" class="form-control" placeholder="Destino final">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="num_waypoints">Número de waypoints</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-list-ol"></i></span>
+                                </div>
+                                <input id="num_waypoints" type="number" class="form-control" placeholder="Número de waypoints" min="0">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="travel_mode">Modo de Viaje</label>
+                            <div id="travel_mode" class="d-flex justify-content-between">
+                                <button id="DRIVING" class="btn btn-outline-dark mode-button" onclick="setTravelMode('DRIVING')">
+                                    <i class="fas fa-car"></i>
+                                </button>
+                                <button id="BICYCLING" class="btn btn-outline-dark mode-button" onclick="setTravelMode('BICYCLING')">
+                                    <i class="fas fa-bicycle"></i>
+                                </button>
+                                <button id="WALKING" class="btn btn-outline-dark mode-button" onclick="setTravelMode('WALKING')">
+                                    <i class="fas fa-walking"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="generateWaypointInputs()" class="btn btn-dark mb-2">Generar campos de waypoints</button>
+                        <div id="waypoint_inputs" class="form-group"></div>
+                        <button onclick="calculateRoute()" class="btn btn-success">Calcular Ruta</button>
+                    </div>
+                </div>
+                <div id="results" class="card mt-4" style="display: none;">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Rutay costes</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="result-header">
+                            <i id="result-travel-icon" class="fas fa-car"></i>
+                            <b id="result-origin"></b>
+                            <span>a</span>
+                            <b id="result-destination"></b>
+                        </div>
+                        <p id="distance" class="card-text"></p>
+                        <p id="duration" class="card-text"></p>
+                        <p id="fuel_cost" class="card-text"></p>
+                        <p id="toll_cost" class="card-text"></p>
+                        <p id="total_cost" class="card-text"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let map;
+        let directionsService;
+        let directionsRenderer;
+        let waypointsData = [];
+        let selectedTravelMode = 'DRIVING'; // Default travel mode
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 6,
+                center: {lat: 19.432608, lng: -99.133209} // Ciudad de México
+            });
+
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map
+            });
+        }
+
+        function generateWaypointInputs() {
+            const numWaypoints = document.getElementById('num_waypoints').value;
+            const waypointContainer = document.getElementById('waypoint_inputs');
+            waypointContainer.innerHTML = '';
+
+            for (let i = 0; i < numWaypoints; i++) {
+                const inputGroup = document.createElement('div');
+                inputGroup.className = 'input-group mb-2';
+
+                const inputGroupPrepend = document.createElement('div');
+                inputGroupPrepend.className = 'input-group-prepend';
+
+                const span = document.createElement('span');
+                span.className = 'input-group-text';
+                span.innerHTML = '<i class="fas fa-map-marker-alt"></i>';
+
+                inputGroupPrepend.appendChild(span);
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control';
+                input.placeholder = `Waypoint ${i + 1}`;
+                input.id = `waypoint${i + 1}`;
+
+                inputGroup.appendChild(inputGroupPrepend);
+                inputGroup.appendChild(input);
+
+                waypointContainer.appendChild(inputGroup);
+            }
+        }
+
+        function setTravelMode(mode) {
+            selectedTravelMode = mode;
+            document.querySelectorAll('.mode-button').forEach(button => {
+                button.classList.remove('btn-primary');
+                button.classList.add('btn-outline-primary');
+            });
+            document.getElementById(mode).classList.remove('btn-outline-primary');
+            document.getElementById(mode).classList.add('btn-primary');
+        }
+
+        function calculateRoute() {
+            const origin = document.getElementById('origin').value;
+            const destination = document.getElementById('destination').value;
+            const numWaypoints = document.getElementById('num_waypoints').value;
+
+            waypointsData = [];
+            const waypoints = [];
+            for (let i = 0; i < numWaypoints; i++) {
+                const waypoint = document.getElementById(`waypoint${i + 1}`).value;
+                if (waypoint) {
+                    waypoints.push({ location: waypoint, stopover: true });
+                    waypointsData.push(waypoint);
+                }
+            }
+
+            const request = {
+                origin: origin,
+                destination: destination,
+                waypoints: waypoints,
+                travelMode: selectedTravelMode
+            };
+
+            directionsService.route(request, function(result, status) {
+                if (status == 'OK') {
+                    directionsRenderer.setDirections(result);
+
+                    const totalDistance = result.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000;  // en kilómetros
+                    const totalDuration = result.routes[0].legs.reduce((sum, leg) => sum + leg.duration.value, 0);  // en segundos
+                    const totalHours = Math.floor(totalDuration / 3600);
+                    const totalMinutes = Math.floor((totalDuration % 3600) / 60);
+
+                    fetch('/get_directions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            origin: origin,
+                            destination: destination,
+                            waypoints: waypoints.map(wp => wp.location),
+                            total_distance: totalDistance,
+                            total_duration: totalDuration,
+                            travel_mode: selectedTravelMode
+                        })
+                    }).then(response => response.json())
+                      .then(data => {
+                          document.getElementById('result-origin').innerText = origin;
+                          document.getElementById('result-destination').innerText = destination;
+                          document.getElementById('result-travel-icon').className = `fas fa-${selectedTravelMode.toLowerCase()}`;
+
+                          document.getElementById('distance').innerText = `Distancia total: ${data.total_distance.toFixed(2)} km`;
+                          document.getElementById('duration').innerText = `Duración total: ${totalHours} horas y ${totalMinutes} minutos`;
+                          document.getElementById('fuel_cost').innerText = `Costo total de la gasolina: $${data.total_fuel_cost.toFixed(2)}`;
+                          document.getElementById('toll_cost').innerText = `Costo total de las casetas: $${data.total_toll_cost.toFixed(2)}`;
+                          document.getElementById('total_cost').innerText = `Costo total del viaje: $${data.total_trip_cost.toFixed(2)}`;
+
+                          document.getElementById('results').style.display = 'block';
+                      })
+                      .catch(error => console.error('Error:', error));
+                } else {
+                    console.error('Error: ' + status);
+                }
+            });
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
